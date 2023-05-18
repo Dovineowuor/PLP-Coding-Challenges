@@ -1,12 +1,10 @@
 import tkinter as tk
 from tkinter import messagebox
-import hashlib
-import string
-import random
 import csv
-import os
-
-PASSWORDS_FILE = os.path.expanduser("~/Documents/GitHub/PLP-Coding-Challenges/password.csv")
+import hashlib
+import random
+import string
+from window import Window
 
 
 class PasswordModel:
@@ -15,30 +13,40 @@ class PasswordModel:
         self.load_passwords()
 
     def load_passwords(self):
-        if os.path.exists(PASSWORDS_FILE):
-            with open(PASSWORDS_FILE, "r", newline="") as file:
+        try:
+            with open("passwords.csv", "r") as file:
                 reader = csv.DictReader(file)
                 self.passwords = list(reader)
+        except FileNotFoundError:
+            self.passwords = []
 
     def save_passwords(self):
-        with open(PASSWORDS_FILE, "w", newline="") as file:
+        with open("passwords.csv", "w", newline="") as file:
             fieldnames = ["ID", "Name", "Hashed Password"]
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(self.passwords)
 
+    def get_all_passwords(self):
+        return self.passwords
+
     def add_password(self, name, password):
-        id = self.generate_id()
+        new_id = self.generate_id()
         hashed_password = hash_password(password)
-        self.passwords.append({"ID": id, "Name": name, "Hashed Password": hashed_password})
+        self.passwords.append({"ID": new_id, "Name": name, "Hashed Password": hashed_password})
         self.save_passwords()
 
     def delete_password(self, id):
         self.passwords = [password for password in self.passwords if password["ID"] != id]
         self.save_passwords()
 
-    def get_all_passwords(self):
-        return self.passwords
+    def update_password(self, id, name, password):
+        for pwd in self.passwords:
+            if pwd["ID"] == id:
+                pwd["Name"] = name
+                pwd["Hashed Password"] = hash_password(password)
+                break
+        self.save_passwords()
 
     def generate_id(self):
         ids = [int(password.get("ID", 0)) for password in self.passwords]
@@ -49,78 +57,74 @@ class PasswordModel:
 class PasswordView:
     def __init__(self, root):
         self.root = root
-        self.root.geometry("720x720")
-        self.root.title("Password Generator")
 
-        self.label = tk.Label(root, text="Password Generator")
+        self.label = tk.Label(root.main_frame, text="Password Generator")
         self.label.pack()
 
-        self.name_label = tk.Label(root, text="Name:")
+        self.name_label = tk.Label(root.main_frame, text="Name:")
         self.name_label.pack()
-        self.name_entry = tk.Entry(root)
+        self.name_entry = tk.Entry(root.main_frame)
         self.name_entry.pack()
 
-        self.generate_button = tk.Button(root, text="Generate Password", command=self.generate_password)
+        self.generate_button = tk.Button(root.main_frame, text="Generate Password", command=self.generate_password)
         self.generate_button.pack()
+
+        self.password_label = tk.Label(root.main_frame, text="Generated Password:")
+        self.password_label.pack()
+        self.password_entry = tk.Entry(root.main_frame, state="readonly")
+        self.password_entry.pack()
+
+        self.save_button = tk.Button(root.main_frame, text="Save Password", command=self.save_password)
+        self.save_button.pack()
+
+        self.show_passwords_button = tk.Button(root.main_frame, text="Show Passwords", command=self.show_passwords)
+        self.show_passwords_button.pack()
 
         self.password_model = PasswordModel()
 
-        self.menu_bar = tk.Menu(self.root)
-        self.menu_bar.add_command(label="View Passwords", command=self.show_passwords)
-        self.root.config(menu=self.menu_bar)
-
-        self.root.bind("<Configure>", self.hide_password_window)
-
     def generate_password(self):
-        name = self.name_entry.get().strip()
-        if not name:
-            messagebox.showerror("Error", "Name cannot be empty.")
-            return
-
         password = generate_password()
-        self.password_model.add_password(name, password)
-        messagebox.showinfo("Password Generated", f"Generated Password: {password}")
+        self.password_entry.configure(state="normal")
+        self.password_entry.delete(0, tk.END)
+        self.password_entry.insert(0, password)
+        self.password_entry.configure(state="readonly")
+
+    def save_password(self):
+        name = self.name_entry.get().strip()
+        password = self.password_entry.get().strip()
+        if name and password:
+            self.password_model.add_password(name, password)
+            messagebox.showinfo("Success", "Password saved successfully.")
+            self.name_entry.delete(0, tk.END)
+            self.password_entry.delete(0, tk.END)
+        else:
+            messagebox.showerror("Error", "Please enter a name and password.")
 
     def show_passwords(self):
-        self.display_passwords()
-        self.password_window.deiconify()
-
-    def display_passwords(self):
         passwords = self.password_model.get_all_passwords()
-        self.password_text.delete("1.0", tk.END)
-        for password in passwords[:10]:
-            self.password_text.insert(tk.END, f"ID: {password['ID']}\tName: {password['Name']}\tHashed Password: {password['Hashed Password']}\n")
-        if len(passwords) > 10:
-            self.password_text.insert(tk.END, "\n...More")
-
-    def hide_password_window(self, event):
-        self.password_window.withdraw()
+        if not passwords:
+            messagebox.showinfo("Info", "No passwords saved.")
+        else:
+            messagebox.showinfo("Info", "\n".join([f"ID: {password['ID']}\tName: {password['Name']}" for password in passwords]))
 
 
 def hash_password(password):
-    salt = _salt(length=16)
-    hashed_password = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
-    return hashed_password.hex()
+    salt = _salt()
+    return hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
 
 
-def _salt(length=16):
+def generate_password(length=10):
     characters = string.ascii_letters + string.digits + string.punctuation
-    salt = ''.join(random.choice(characters) for _ in range(length))
-    return salt.encode()
+    return ''.join(random.choice(characters) for _ in range(length))
 
 
-def generate_password(length=12):
+def _salt(length=32):
     characters = string.ascii_letters + string.digits + string.punctuation
-    password = ''.join(random.choice(characters) for _ in range(length))
-    return password
+    return ''.join(random.choice(characters) for _ in range(length))
 
 
-def main():
-    root = tk.Tk()
-    view = PasswordView(root)
-    root.mainloop()
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    window = Window()
+    app = PasswordView(window)
+    window.run()
 
